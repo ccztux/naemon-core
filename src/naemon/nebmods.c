@@ -195,9 +195,11 @@ int neb_load_module(nebmodule *mod)
 
 	/* check the module API version */
 	if (module_version_ptr == NULL || ((*module_version_ptr) != CURRENT_NEB_API_VERSION)) {
-
-		nm_log(NSLOG_RUNTIME_ERROR, "Error: Module '%s' is using an old or unspecified version of the event broker API.  Module will be unloaded.\n", mod->filename);
-
+		if (module_version_ptr == NULL) {
+			nm_log(NSLOG_RUNTIME_ERROR, "Error: Module '%s' did not specify a version of the event broker API. Module will be unloaded.\n", mod->filename);
+		} else {
+			nm_log(NSLOG_RUNTIME_ERROR, "Error: Module '%s' is using an incompatible version (v%d) of the event broker API (current version: v%d). Module will be unloaded.\n", mod->filename, *module_version_ptr, CURRENT_NEB_API_VERSION);
+		}
 		neb_unload_module(mod, NEBMODULE_FORCE_UNLOAD, NEBMODULE_ERROR_API_VERSION);
 
 		return ERROR;
@@ -369,7 +371,7 @@ static neb_cb_resultset *neb_cb_resultset_create(void)
 
 void neb_cb_resultset_destroy(neb_cb_resultset *cbrs)
 {
-	if(cbrs == NULL)
+	if (cbrs == NULL)
 		return;
 	g_ptr_array_free(cbrs->cb_results, TRUE);
 	nm_free(cbrs);
@@ -457,7 +459,8 @@ void neb_cb_result_destroy(neb_cb_result *res)
 	nm_free(res);
 }
 
-void neb_cb_result_g_ptr_array_clear(gpointer data) {
+void neb_cb_result_g_ptr_array_clear(gpointer data)
+{
 	neb_cb_result_destroy(data);
 }
 
@@ -519,7 +522,8 @@ int neb_register_callback_full(enum NEBCallbackType callback_type, void *mod_han
 	return OK;
 }
 
-int neb_register_callback(enum NEBCallbackType callback_type, void *mod_handle, int priority, int (*callback_func)(int, void *)) {
+int neb_register_callback(enum NEBCallbackType callback_type, void *mod_handle, int priority, int (*callback_func)(int, void *))
+{
 	return neb_register_callback_full(callback_type, mod_handle, priority, NEB_API_VERSION_1, callback_func);
 }
 
@@ -541,7 +545,7 @@ int neb_deregister_module_callbacks(nebmodule *mod)
 		for (temp_callback = neb_callback_list[callback_type]; temp_callback != NULL; temp_callback = next_callback) {
 			next_callback = temp_callback->next;
 			if (temp_callback->module_handle == mod->module_handle)
-				neb_deregister_callback(callback_type, (int( *)(int, void *))temp_callback->callback_func);
+				neb_deregister_callback(callback_type, (int(*)(int, void *))temp_callback->callback_func);
 		}
 
 	}
@@ -590,30 +594,28 @@ int neb_deregister_callback(enum NEBCallbackType callback_type, void *callback_f
 	return OK;
 }
 
-static neb_cb_result * neb_invoke_callback(void *cb, enum NEBCallbackAPIVersion api_version, enum NEBCallbackType callback_type, void *user_data)
+static neb_cb_result *neb_invoke_callback(void *cb, enum NEBCallbackAPIVersion api_version, enum NEBCallbackType callback_type, void *user_data)
 {
 	neb_cb_result *cbresult = NULL;
 	switch (api_version) {
-		case NEB_API_VERSION_2:
-			{
-				neb_cb_result *(*callbackfunc)(int, void *) = cb;
-				cbresult = callbackfunc(callback_type, user_data);
-			}
-			break;
-		case NEB_API_VERSION_1:
-			{
-				int (*callbackfunc)(int, void *) = cb;
-				int rc = callbackfunc(callback_type, user_data);
-				cbresult = neb_cb_result_create_full(rc, "No description available, callback invoked using API version 1");
-			}
-			break;
+	case NEB_API_VERSION_2: {
+		neb_cb_result *(*callbackfunc)(int, void *) = cb;
+		cbresult = callbackfunc(callback_type, user_data);
+	}
+	break;
+	case NEB_API_VERSION_1: {
+		int (*callbackfunc)(int, void *) = cb;
+		int rc = callbackfunc(callback_type, user_data);
+		cbresult = neb_cb_result_create_full(rc, "No description available, callback invoked using API version 1");
+	}
+	break;
 	}
 
 	return cbresult;
 }
 
 /* make callbacks to modules */
-neb_cb_resultset * neb_make_callbacks_full(enum NEBCallbackType callback_type, void *data)
+neb_cb_resultset *neb_make_callbacks_full(enum NEBCallbackType callback_type, void *data)
 {
 	nebcallback *temp_callback, *next_callback;
 	nebmodule *temp_module;
@@ -634,7 +636,7 @@ neb_cb_resultset * neb_make_callbacks_full(enum NEBCallbackType callback_type, v
 	/* make the callbacks... */
 	for (temp_callback = neb_callback_list[callback_type]; temp_callback; temp_callback = next_callback) {
 		next_callback = temp_callback->next;
-		/* get name of module reponsible for the callback */
+		/* get name of module responsible for the callback */
 		for (temp_module = neb_module_list; temp_module != NULL; temp_module = temp_module->next) {
 			if (temp_module->module_handle == temp_callback->module_handle) {
 				if (temp_module->core_module) {
